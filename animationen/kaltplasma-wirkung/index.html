@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kaltplasma Wirkung</title>
+<style>
+@font-face{font-family:Fredoka;src:url(fonts/fredoka-latin.woff2) format('woff2');font-weight:300 700;}
+html,body{margin:0;background:#2a2622;min-height:100%}
+body{display:flex;align-items:center;justify-content:center;flex-direction:column;min-height:100vh}
+#stage{width:min(100vw,calc((100vh - 56px)*16/9));height:auto;aspect-ratio:16/9;display:block;background:#efe4cc}
+body.render #stage{width:1920px;height:1080px}
+body.render #ui{display:none}
+#ui{color:#e8e0d0;font:14px system-ui,sans-serif;display:flex;gap:12px;align-items:center;padding:10px 16px;box-sizing:border-box;width:100%;max-width:1200px}
+#ui input{flex:1}
+#ui button{font:inherit;padding:4px 12px}
+text{font-family:Fredoka,'DejaVu Sans',sans-serif;font-weight:600}
+</style>
+</head>
+<body>
+<svg id="stage" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <!-- Papierstruktur für den Hintergrundbogen -->
+  <filter id="bgtex" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" seed="11" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.25  0 0 0 0 0.18  0 0 0 0 0.1  0.6 0 0 0 -0.22" result="ga"/>
+    <feComposite in="ga" in2="SourceGraphic" operator="in" result="gm"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" seed="5" result="big"/>
+    <feColorMatrix in="big" type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0 0.1  0.22 0 0 0 -0.08" result="bga"/>
+    <feComposite in="bga" in2="SourceGraphic" operator="in" result="bgm"/>
+    <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="bgm"/><feMergeNode in="gm"/></feMerge>
+  </filter>
+  <!-- Ausgeschnittenes Papier: unruhige Kante, Körnung, Schlagschatten -->
+  <filter id="paper" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="2" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="5" xChannelSelector="R" yChannelSelector="G" result="d"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="8" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.2  0 0 0 0 0.15  0 0 0 0 0.1  0.7 0 0 0 -0.27" result="ga"/>
+    <feComposite in="ga" in2="d" operator="in" result="gm"/>
+    <feMerge result="m"><feMergeNode in="d"/><feMergeNode in="gm"/></feMerge>
+    <feDropShadow in="m" dx="4" dy="7" stdDeviation="4" flood-color="#3a2614" flood-opacity="0.38"/>
+  </filter>
+  <!-- Gleicher Look für bildbreite Teile (kleinerer Filterbereich) -->
+  <filter id="paperW" x="-3%" y="-12%" width="106%" height="130%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="4" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" result="d"/>
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="9" result="g"/>
+    <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.2  0 0 0 0 0.15  0 0 0 0 0.1  0.7 0 0 0 -0.27" result="ga"/>
+    <feComposite in="ga" in2="d" operator="in" result="gm"/>
+    <feMerge result="m"><feMergeNode in="d"/><feMergeNode in="gm"/></feMerge>
+    <feDropShadow in="m" dx="0" dy="-6" stdDeviation="5" flood-color="#3a2614" flood-opacity="0.3"/>
+  </filter>
+</defs>
+<g id="root"></g>
+</svg>
+<div id="ui">
+  <button id="play">Pause</button>
+  <input id="scrub" type="range" min="0" step="0.01" value="0">
+  <span id="tc">0.0 s</span>
+</div>
+
+<script>
+// =====================================================================
+//  ZEITPLAN – hier an die Sprachaufnahme anpassen (Sekunden)
+// =====================================================================
+const SCENES = {
+  titel:        [0, 6],    // "Dem Kaltplasma werden drei Wirkungen zugeschrieben."
+  keime:        [6, 20],   // "Erstens: Es wirkt gegen Keime ..."
+  durchblutung: [20, 34],  // "Zweitens: Es soll die Durchblutung anregen ..."
+  wunde:        [34, 48],  // "Drittens: Es soll die Zellen dazu anregen ..."
+  pointe:       [48, 60],  // "Aber jetzt kommt das Wichtige ... Hinweis, noch kein Beweis."
+};
+const DURATION = 60;
+const STOP_FPS = 12;   // Stop-Motion-Takt (Bilder pro Sekunde)
+
+// ---------------------------------------------------------------------
+const NS = 'http://www.w3.org/2000/svg';
+const root = document.getElementById('root');
+const C = {
+  ink:'#3B2F2F', white:'#FFFDF7', cream:'#F4EAD5',
+  plasma1:'#6C4FD1', plasma2:'#9B84EE', plasma3:'#D6CCFA',
+  device:'#5B7A99', device2:'#3F5A75', yellow:'#F2C14E',
+  teal:'#2F7F7B', red:'#D5524A', skin1:'#F3C9AE', skin2:'#E9AE90', skin3:'#F1D68E',
+};
+
+const clamp = (v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const prog  = (t,a,b)=>clamp((t-a)/(b-a));
+const lerp  = (a,b,p)=>a+(b-a)*p;
+const easeOut   = p=>1-Math.pow(1-p,3);
+const easeIn    = p=>p*p*p;
+const easeInOut = p=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
+const backOut   = p=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2);};
+function hash(n){n=Math.sin(n*127.1+311.7)*43758.5453;return n-Math.floor(n);}
+
+function el(tag,attrs={},parent){
+  const e=document.createElementNS(NS,tag);
+  for(const k in attrs) e.setAttribute(k,attrs[k]);
+  if(parent) parent.appendChild(e);
+  return e;
+}
+let JID=1, JT=0;
+// Ein "Papierstück": bekommt Papierfilter und eigenes Stop-Motion-Zittern
+function piece(parent,filter='paper'){
+  const g=el('g',filter?{filter:`url(#${filter})`}:{},parent);
+  g.dataset.jid=JID++;
+  return g;
+}
+// Positionieren mit leichtem Zittern wie bei gelegtem Papier
+function place(e,x,y,r=0,sx=1,sy=sx){
+  const id=+e.dataset.jid||0, f=JT;
+  const jx=(hash(id*13.1+f)-.5)*2.2, jy=(hash(id*7.3+f*3.7)-.5)*2.2, jr=(hash(id*3.9+f*11.3)-.5)*1.1;
+  e.setAttribute('transform',`translate(${(x+jx).toFixed(2)},${(y+jy).toFixed(2)}) rotate(${(r+jr).toFixed(2)}) scale(${sx.toFixed(4)},${sy.toFixed(4)})`);
+}
+function show(e,v){e.setAttribute('display',v?'inline':'none');}
+function pop(e,x,y,lt,t0,rot=0,dur=0.45){
+  const p=prog(lt,t0,t0+dur); show(e,p>0);
+  if(p>0) place(e,x,y,rot,Math.max(0.001,backOut(p)));
+}
+function slideIn(e,x,y,lt,t0,fromX,rot=0,dur=0.6){
+  const p=prog(lt,t0,t0+dur); show(e,p>0);
+  if(p>0) place(e,lerp(fromX,x,backOut(p)),y,rot);
+}
+
+// ---------- Bausteine ----------
+function tag(parent,text,{size=40,fill=C.white,color=C.ink,pad=26,hole=false,filter='paper'}={}){
+  const g=piece(parent,filter);
+  const r=el('rect',{fill,rx:12},g);
+  const tx=el('text',{'font-size':size,fill:color,'text-anchor':'middle',y:size*0.35},g);
+  tx.textContent=text;
+  const extra=hole?34:0;
+  const w=tx.getComputedTextLength()+pad*2+extra, h=size*1.65;
+  r.setAttribute('x',-w/2); r.setAttribute('y',-h/2); r.setAttribute('width',w); r.setAttribute('height',h);
+  if(hole){ tx.setAttribute('x',extra/2); el('circle',{cx:-w/2+24,cy:0,r:8,fill:C.ink,opacity:.55},g); }
+  g.w=w; g.h=h; return g;
+}
+function header(parent,num,label,color){
+  const badge=piece(parent);
+  el('circle',{r:58,fill:color},badge);
+  const n=el('text',{y:23,'text-anchor':'middle','font-size':68,fill:C.white},badge); n.textContent=num;
+  const ban=tag(parent,label,{size:56,pad:34});
+  return {badge,ban};
+}
+function animHeader(h,lt){
+  pop(h.badge,150,140,lt,0.5);
+  slideIn(h.ban,240+h.ban.w/2,142,lt,0.8,-900,-1.5);
+}
+function star(parent,color,r=40){
+  const g=piece(parent); let d='';
+  for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5, rr=i%2?r*0.45:r; d+=(i?'L':'M')+(Math.cos(a)*rr).toFixed(1)+','+(Math.sin(a)*rr).toFixed(1);}
+  el('path',{d:d+'Z',fill:color},g); return g;
+}
+
+// Kaltplasma-Handstück; Spitze liegt im Ursprung und zeigt nach +x
+function makeDevice(parent){
+  const g=el('g',{},parent); g.dataset.jid=JID++;
+  const jet=[];
+  [[C.plasma3,270,30],[C.plasma2,205,21],['#F4F0FF',130,11]].forEach(([col,L,h])=>{
+    const j=piece(g);
+    el('path',{d:`M0,${-h} Q${L*0.45},${-h*1.25} ${L},0 Q${L*0.45},${h*1.25} 0,${h} Z`,fill:col},j);
+    jet.push(j);
+  });
+  const body=piece(g);
+  el('path',{d:'M-560,40 C-640,60 -700,20 -760,70',stroke:'#2E3B47','stroke-width':16,fill:'none','stroke-linecap':'round'},body);
+  el('rect',{x:-580,y:-46,width:520,height:92,rx:42,fill:C.device},body);
+  el('rect',{x:-430,y:-46,width:90,height:92,fill:C.device2},body);
+  el('path',{d:'M-62,-32 L0,-15 L0,15 L-62,32 Z',fill:C.device2},body);
+  el('circle',{cx:-250,cy:-12,r:15,fill:C.yellow},body);
+  el('rect',{x:-560,y:-34,width:110,height:14,rx:7,fill:'#fff',opacity:.35},body);
+  return {g,jet};
+}
+function updDevice(d,x,y,ang,on,f,len=1){
+  place(d.g,x,y,ang);
+  d.jet.forEach((j,i)=>{
+    if(on<0.03){show(j,false);return;}
+    show(j,true);
+    const sx=on*len*(0.82+0.32*hash(f*5.1+i*17)), sy=0.85+0.3*hash(f*9.7+i*3);
+    j.setAttribute('transform',`scale(${sx.toFixed(3)},${sy.toFixed(3)})`);
+  });
+}
+
+// Gesichter: 0 froh, 1 besorgt, 2 erschrocken, 3 k.o., 4 nachdenklich
+function makeFace(parent,r){
+  const f={r};
+  f.eyes=[-1,1].map(s=>{
+    const g=el('g',{transform:`translate(${s*r*0.36},${-r*0.12})`},parent);
+    const w=el('ellipse',{rx:r*0.17,ry:r*0.21,fill:'#fff'},g);
+    const p=el('circle',{r:r*0.09,fill:C.ink},g);
+    const x=el('path',{d:`M${-r*.12},${-r*.12}L${r*.12},${r*.12}M${r*.12},${-r*.12}L${-r*.12},${r*.12}`,stroke:C.ink,'stroke-width':r*0.08,'stroke-linecap':'round'},g);
+    return {w,p,x};
+  });
+  f.brows=[0,1].map(()=>el('path',{stroke:C.ink,'stroke-width':r*0.065,'stroke-linecap':'round',fill:'none'},parent));
+  f.mouth=el('path',{stroke:C.ink,'stroke-width':r*0.075,'stroke-linecap':'round','stroke-linejoin':'round'},parent);
+  f.sweat=el('path',{d:`M${r*0.78},${-r*0.62} q${r*0.13},${r*0.26} 0,${r*0.32} q${-r*0.13},${-r*0.06} 0,${-r*0.32}z`,fill:'#9FD3F0'},parent);
+  setFace(f,0);
+  return f;
+}
+function setFace(f,mood,look=0){
+  const r=f.r, ko=mood===3;
+  f.eyes.forEach(e=>{
+    show(e.w,!ko); show(e.p,!ko); show(e.x,ko);
+    const big=mood===2?1.3:1;
+    e.w.setAttribute('rx',r*0.17*big); e.w.setAttribute('ry',r*0.21*big);
+    e.p.setAttribute('cx',look*r*0.07); e.p.setAttribute('r',r*(mood===2?0.065:0.09));
+  });
+  f.brows.forEach((b,i)=>{
+    const s=i?1:-1, x=s*r*0.36, y=-r*0.5, inner=x-s*r*0.14, outer=x+s*r*0.14;
+    let d='M0,0';
+    if(mood===0) d=`M${inner},${y+r*.03}Q${x},${y-r*.07} ${outer},${y+r*.03}`;
+    else if(mood===1||mood===2) d=`M${inner},${y-r*.12}L${outer},${y+r*.01}`;
+    else if(mood===4) d=i?`M${inner},${y-r*.04}Q${x},${y-r*.2} ${outer},${y-r*.1}`:`M${inner},${y}L${outer},${y}`;
+    b.setAttribute('d',d); show(b,!ko);
+  });
+  let m, fill='none';
+  if(mood===0) m=`M${-r*.26},${r*.24}Q0,${r*.52} ${r*.26},${r*.24}`;
+  else if(mood===1) m=`M${-r*.24},${r*.4}q${r*.12},${-r*.11} ${r*.24},0 t${r*.24},0`;
+  else if(mood===2){ m=`M${-r*.1},${r*.38}a${r*.1},${r*.14} 0 1,0 ${r*.2},0a${r*.1},${r*.14} 0 1,0 ${-r*.2},0`; fill=C.ink; }
+  else if(mood===3) m=`M${-r*.24},${r*.38}q${r*.12},${r*.1} ${r*.24},0 t${r*.24},0`;
+  else m=`M${-r*.18},${r*.38}L${r*.16},${r*.33}`;
+  f.mouth.setAttribute('d',m); f.mouth.setAttribute('fill',fill);
+  show(f.sweat,mood===1||mood===2);
+}
+
+// ---------- Szenen ----------
+const scenes=[];
+function makeScene(key,bg,builder){
+  const [s,e]=SCENES[key];
+  const g=el('g',{},root);
+  el('rect',{x:-60,y:-60,width:2040,height:1200,fill:bg,filter:'url(#bgtex)'},g);
+  const upd=builder(g);
+  scenes.push({key,s,e,g,upd});
+}
+
+// ===== Szene 0: Titel =====
+function sceneTitel(g){
+  const scraps=[[260,180,90,'#EAD9B8'],[1720,930,120,'#E6D2AE'],[1780,160,60,'#EAD9B8']].map(([x,y,r,c])=>{const p=piece(g);el('circle',{r,fill:c},p);place(p,x,y);return p;});
+  const dev=makeDevice(g);
+  const b1=tag(g,'Was soll Kaltplasma',{size:92,pad:44});
+  const b2=tag(g,'bewirken?',{size:112,pad:48,fill:C.plasma1,color:C.white});
+  const nums=[['1','#2F9C95'],['2','#C9463F'],['3','#E58F6B']].map(([n,c])=>{
+    const p=piece(g); el('circle',{r:56,fill:c},p);
+    const t=el('text',{y:23,'text-anchor':'middle','font-size':66,fill:C.white},p); t.textContent=n; return p;});
+  const lbl=tag(g,'3 Wirkungen',{size:46});
+  const sparks=[0,1,2].map(i=>star(g,i===1?C.plasma2:C.yellow,i===1?26:20));
+  return (lt,f)=>{
+    const dp=easeOut(prog(lt,0,0.9));
+    updDevice(dev,lerp(-300,700,dp),790,-12,prog(lt,1.0,1.4),f);
+    slideIn(b1,1190,300,lt,0.3,2600,-2);
+    slideIn(b2,1300,470,lt,0.7,2600,2);
+    nums.forEach((n,i)=>pop(n,1180+i*150,730,lt,2.4+i*0.35,(i-1)*4));
+    pop(lbl,1330,850,lt,3.6,-1);
+    sparks.forEach((s,i)=>{const on=lt>1.4; show(s,on); if(on){const k=hash(f*3+i*7); place(s,960+i*60+k*40,700+(k-.5)*120,k*90,0.6+0.6*hash(f+i));}});
+  };
+}
+
+// ===== Szene 1: Keime =====
+function sceneKeime(g){
+  const ground=825;
+  const skinLow=piece(g,'paperW'); el('rect',{x:-40,y:ground+70,width:2000,height:300,fill:C.skin2},skinLow);
+  const skin=piece(g,'paperW');
+  let d=`M-40,${ground}`; for(let x=-40;x<=1960;x+=80) d+=` Q${x+40},${ground-12*(((x/80)|0)%2?1:-1)} ${x+80},${ground}`;
+  el('path',{d:d+` L1960,${ground+95} L-40,${ground+95} Z`,fill:C.skin1},skin);
+  const hd=header(g,'1','Gegen Keime','#2F9C95');
+  const labor=tag(g,'im Labor',{size:50,fill:C.yellow,hole:true});
+
+  function germ(kind){
+    const p=piece(g); let face, h;
+    if(kind==='bac'||kind==='mrsa'){
+      const col=kind==='bac'?'#B9CF5A':'#7DB6C8', sh=kind==='bac'?'#8EA43A':'#4F8EA3';
+      el('path',{d:'M-98,0 c-30,-24 -42,22 -78,2',stroke:sh,'stroke-width':8,fill:'none','stroke-linecap':'round'},p);
+      el('path',{d:'M98,-10 c30,-24 42,22 74,0',stroke:sh,'stroke-width':8,fill:'none','stroke-linecap':'round'},p);
+      el('rect',{x:-100,y:-54,width:200,height:108,rx:54,fill:col},p);
+      el('ellipse',{cx:-48,cy:-28,rx:30,ry:9,fill:'#fff',opacity:.35},p);
+      face=makeFace(el('g',{transform:'translate(8,4)'},p),46); h=108;
+      if(kind==='mrsa'){
+        const s=el('g',{transform:'translate(84,-56) rotate(12)'},p);
+        el('path',{d:'M0,-30 L26,-19 L22,10 Q13,27 0,33 Q-13,27 -22,10 L-26,-19 Z',fill:C.yellow,stroke:'#B88A1E','stroke-width':3},s);
+        const t=el('text',{y:12,'text-anchor':'middle','font-size':34,fill:C.ink},s); t.textContent='!';
+      }
+    } else if(kind==='virus'){
+      for(let i=0;i<11;i++){const a=i/11*Math.PI*2;
+        el('line',{x1:Math.cos(a)*55,y1:Math.sin(a)*55,x2:Math.cos(a)*84,y2:Math.sin(a)*84,stroke:'#B8473C','stroke-width':8,'stroke-linecap':'round'},p);
+        el('circle',{cx:Math.cos(a)*88,cy:Math.sin(a)*88,r:10,fill:'#B8473C'},p);}
+      el('circle',{r:64,fill:'#E46A5C'},p);
+      face=makeFace(p,50); h=180;
+    } else {
+      el('circle',{cx:58,cy:-50,r:28,fill:'#E0A73E'},p);
+      el('circle',{cx:-56,cy:-40,r:16,fill:'#E0A73E'},p);
+      el('circle',{r:64,fill:'#E9B44C'},p);
+      [[-30,38],[34,34],[-8,48]].forEach(([x,y])=>el('circle',{cx:x,cy:y,r:5,fill:'#C98F2A'},p));
+      face=makeFace(p,50); h=128;
+    }
+    return {p,face,h};
+  }
+  const kinds=[['bac','Bakterien'],['fun','Pilze'],['virus','Viren'],['mrsa','multiresistente Keime']];
+  const xs=[430,800,1170,1560];
+  const germs=kinds.map(([k,l],i)=>{const o=germ(k); o.x=xs[i]; o.label=tag(g,l,{size:36}); o.puff=star(g,C.yellow,46); return o;});
+
+  const parts=piece(g); const P=[];
+  for(let i=0;i<40;i++){
+    const q=el('g',{},parts); const col=[C.plasma2,C.yellow,'#2F9C95','#fff'][i%4];
+    el('circle',{r:10+hash(i)*7,fill:col},q);
+    if(i%3===0){const t=el('text',{y:6,'text-anchor':'middle','font-size':17,fill:i%4===3?C.plasma1:'#fff'},q); t.textContent=i%2?'O':'N';}
+    P.push(q);
+  }
+  const dev=makeDevice(g);
+  const sweep=lt=>lerp(300,1700,easeInOut(prog(lt,4,10.2)));
+
+  return (lt,f)=>{
+    animHeader(hd,lt);
+    pop(labor,1690,145,lt,1.6,5);
+    // Gerät kommt von oben, fährt über die Keime, verschwindet wieder
+    const devX=sweep(lt);
+    const tipY=lerp(-120,535,easeOut(prog(lt,2.2,3.4)))-lerp(0,700,easeIn(prog(lt,10.6,11.6)));
+    const on=prog(lt,3.5,3.9)*(1-prog(lt,10.2,10.5));
+    updDevice(dev,devX,tipY,90,on,f);
+    // Teilchen
+    P.forEach((q,i)=>{
+      const b=3.9+i*(6.3/40), age=lt-b, life=1.0;
+      if(age<0||age>life||on<0.5){show(q,false);return;}
+      show(q,true);
+      const bx=sweep(b)+(hash(i*5)-.5)*60, vx=(hash(i*9)-.5)*300;
+      q.setAttribute('transform',`translate(${(bx+vx*age).toFixed(1)},${(560+260*age+120*age*age).toFixed(1)})`);
+      q.setAttribute('opacity',(1-prog(age,0.7,1)).toFixed(2));
+    });
+    germs.forEach((o,i)=>{
+      const t0=0.3+i*0.25;
+      const kt=4+((o.x-300)/1400)*6.2+0.35;
+      let mood=0, sy=1, rot=0, dy=0, dx=0, op=1;
+      const look=clamp((devX-o.x)/250,-1,1);
+      if(lt<3.2){ dy=-Math.abs(Math.sin(lt*4+i*1.3))*10; }
+      else if(lt<kt-1.0){ mood=1; dx=(hash(f*7+i)-.5)*5; }
+      else if(lt<kt){ mood=2; dx=(hash(f*7+i)-.5)*9; }
+      else { mood=3; const p=easeOut(prog(lt,kt,kt+0.5)); sy=lerp(1,0.55,p); rot=lerp(0,i%2?9:-9,p); op=lerp(1,0.8,p); }
+      setFace(o.face,mood,mood===3?0:look);
+      const base=ground-o.h/2+6;
+      const pp=backOut(prog(lt,t0,t0+0.45)); show(o.p,pp>0);
+      if(pp>0){ place(o.p,o.x+dx,base+dy+o.h*(1-sy)/2,rot,pp*(2-sy)*0.5+pp*0.5,pp*sy); o.p.setAttribute('opacity',op); }
+      pop(o.label,o.x,ground+150,lt,t0+0.4,(i%2?2:-2));
+      const pu=prog(lt,kt-0.05,kt+0.5); show(o.puff,pu>0&&pu<1);
+      if(pu>0&&pu<1) place(o.puff,o.x+30,base-o.h/2-10,pu*60,backOut(clamp(pu*2))*(1-pu*0.4));
+    });
+  };
+}
+
+// ===== Szene 2: Durchblutung =====
+function sceneDurchblutung(g){
+  const cy=735;
+  const tissue=piece(g,'paperW'); el('rect',{x:-40,y:330,width:2000,height:800,fill:C.skin2},tissue);
+  for(let i=0;i<16;i++){const x=hash(i)*1900, y=380+hash(i+40)*620;
+    el('path',{d:`M${x},${y} q40,-18 80,0 t80,0`,stroke:'#DD9C7F','stroke-width':6,fill:'none','stroke-linecap':'round'},tissue);}
+  const surf=piece(g,'paperW');
+  let d='M-40,258'; for(let x=-40;x<=1960;x+=80) d+=` Q${x+40},${258+(((x/80)|0)%2?12:-12)} ${x+80},258`;
+  el('path',{d:d+' L1960,345 L-40,345 Z',fill:C.skin1},surf);
+  const wall=piece(g,'paperW'); const wallR=el('rect',{x:-40,width:2000,fill:'#A93C35'},wall);
+  const lumen=piece(g,'paperW'); const lumR=el('rect',{x:-40,width:2000,fill:'#F29A8E'},lumen);
+  const cells=piece(g); const R=[];
+  for(let i=0;i<18;i++){const c=el('g',{},cells); el('circle',{r:27,fill:'#D9433C'},c); el('circle',{r:12,fill:'#EE6E64'},c); R.push(c);}
+  const noG=piece(g); const NO=[];
+  for(let i=0;i<14;i++){const n=el('g',{},noG); el('circle',{r:27,fill:'#2F9C95'},n);
+    const t=el('text',{y:8,'text-anchor':'middle','font-size':23,fill:'#fff'},n); t.textContent='NO'; NO.push(n);}
+  const o2G=piece(g); const O2=[];
+  for(let i=0;i<12;i++){const n=el('g',{},o2G); el('circle',{r:28,fill:'#6FB0E8'},n);
+    const t=el('text',{y:8,x:-4,'text-anchor':'middle','font-size':24,fill:'#fff'},n);
+    t.appendChild(document.createTextNode('O'));
+    const s=el('tspan',{'font-size':15,dy:6},t); s.textContent='2'; O2.push(n);}
+  const arrow=d=>{const p=piece(g); el('path',{d:'M0,-42 L30,-4 L11,-4 L11,36 L-11,36 L-11,-4 L-30,-4 Z',fill:C.yellow,transform:d?'rotate(180)':''},p); return p;};
+  const aUp=arrow(0), aDn=arrow(1);
+  const hd=header(g,'2','Durchblutung','#C9463F');
+  const tNO=tag(g,'NO = Stickstoffmonoxid',{size:38});
+  const tWeit=tag(g,'Gefäß wird weiter',{size:40,fill:C.yellow});
+  const tO2=tag(g,'mehr Sauerstoff',{size:40});
+  const dev=makeDevice(g);
+  const W=lt=>lerp(110,212,easeInOut(prog(lt,5,8.5)));
+  const dist=lt=>{let r=0; if(lt>=8.5) r=1.75+(lt-8.5); else if(lt>5) r=Math.pow(lt-5,2)/7; return 110*lt+240*r;};
+  return (lt,f)=>{
+    animHeader(hd,lt);
+    const w=W(lt);
+    wallR.setAttribute('y',cy-w/2-28); wallR.setAttribute('height',w+56);
+    lumR.setAttribute('y',cy-w/2); lumR.setAttribute('height',w);
+    const D=dist(lt);
+    R.forEach((c,i)=>{
+      const x=((i*2200/18+D)%2200)-140, y=cy+(hash(i+3)-.5)*(w-64);
+      c.setAttribute('transform',`translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${(0.85+0.15*Math.cos(x/90+i)).toFixed(3)},1)`);
+    });
+    // Gerät oben, Strahl auf die Haut
+    const dp=easeOut(prog(lt,0.6,1.6));
+    updDevice(dev,lerp(700,985,dp),lerp(-250,110,dp),62,prog(lt,1.6,2)*(1-prog(lt,7.5,7.9)),f);
+    NO.forEach((n,i)=>{
+      const b=2.1+i*0.32, dur=1.9, age=lt-b;
+      if(age<0||age>dur){show(n,false);return;}
+      show(n,true); const p=age/dur;
+      const sx=1100+(hash(i)-.5)*80, ex=520+i*62, ey=cy-w/2-55;
+      n.setAttribute('transform',`translate(${lerp(sx,ex,easeOut(p)).toFixed(1)},${lerp(330,ey,p*p).toFixed(1)})`);
+      n.setAttribute('opacity',(1-prog(p,0.8,1)).toFixed(2));
+    });
+    O2.forEach((n,i)=>{
+      const b=8.6+i*0.38, dur=2.5, age=lt-b;
+      if(age<0||age>dur){show(n,false);return;}
+      show(n,true); const p=age/dur;
+      const x=300+hash(i*3+1)*1250+Math.sin(age*4+i)*14, y=cy-w/2-60-p*190;
+      n.setAttribute('transform',`translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${backOut(clamp(p*4)).toFixed(3)})`);
+      n.setAttribute('opacity',(1-prog(p,0.75,1)).toFixed(2));
+    });
+    pop(tNO,1560,440,lt,2.9,-2);
+    const ar=lt>5&&lt<9.6; show(aUp,ar); show(aDn,ar);
+    if(ar){const b=Math.sin(lt*6)*8; place(aUp,1700,cy-w/2-90-b,0,1); place(aDn,1700,cy+w/2+90+b,0,1);}
+    pop(tWeit,1500,cy+w/2+180>1010?1010:cy+w/2+180,lt,5.6,2);
+    pop(tO2,420,470,lt,9.4,-2);
+  };
+}
+
+// ===== Szene 3: Wundverschluss =====
+function sceneWunde(g){
+  const top=440, epiB=540, derB=830;
+  const sub=piece(g,'paperW'); el('rect',{x:-40,y:derB-20,width:2000,height:400,fill:C.skin3},sub);
+  for(let i=0;i<14;i++) el('circle',{cx:60+i*140,cy:derB+90+(i%2)*70,r:52,fill:'none',stroke:'#E4C26E','stroke-width':6},sub);
+  const der=piece(g,'paperW'); el('rect',{x:-40,y:epiB-20,width:2000,height:derB-epiB+20,fill:C.skin2},der);
+  for(let i=0;i<14;i++){const x=hash(i+7)*1880, y=600+hash(i+70)*180;
+    el('path',{d:`M${x},${y} q35,-15 70,0 t70,0`,stroke:'#DD9C7F','stroke-width':6,fill:'none','stroke-linecap':'round'},der);}
+  const wound=piece(g); const wP=el('path',{fill:'#B8453D'},wound);
+  const wInner=el('path',{fill:'#8F2F2A',opacity:.6},wound);
+  const epiL=piece(g,'paperW'), epiR=piece(g,'paperW');
+  const eL=el('rect',{y:top,height:epiB-top,fill:C.skin1},epiL), eR=el('rect',{y:top,height:epiB-top,fill:C.skin1},epiR);
+  function cellCol(){const p=piece(g);
+    [[0,top+27],[0,top+75]].forEach(([x,y])=>{const c=el('g',{transform:`translate(${x},${y})`},p);
+      el('circle',{r:26,fill:'#FBE1CF'},c); el('circle',{r:9,cx:4,cy:2,fill:'#E9AE90'},c);
+      el('circle',{cx:-8,cy:-7,r:3.4,fill:C.ink},c); el('circle',{cx:8,cy:-7,r:3.4,fill:C.ink},c);
+      el('path',{d:'M-8,6 Q0,13 8,6',stroke:C.ink,'stroke-width':2.6,fill:'none','stroke-linecap':'round'},c);});
+    return p;}
+  const cL=cellCol(), cR=cellCol();
+  const divs=[[-70,620,0],[-45,730,0.4],[70,640,0.7],[50,740,0.2],[-150,690,0.55],[150,700,0.85]].map(([dx,y,ph])=>{
+    const p=piece(g); const a=el('circle',{r:22,fill:'#F7CDB4'},p), b=el('circle',{r:22,fill:'#F7CDB4'},p);
+    el('circle',{r:7,fill:'#E39D80'},p); return {p,a,b,dx,y,ph};});
+  const sparks=[0,1,2,3].map(i=>star(g,i%2?C.yellow:'#fff',i%2?34:24));
+  const hd=header(g,'3','Wundverschluss','#E58F6B');
+  const t1=tag(g,'Zellen wachsen nach',{size:42});
+  const t2=tag(g,'Wunde schließt sich',{size:42,fill:C.yellow});
+  const dev=makeDevice(g);
+  const G=lt=>230*(1-easeInOut(prog(lt,3,11)));
+  return (lt,f)=>{
+    animHeader(hd,lt);
+    const gg=G(lt), D=40+270*(gg/230), cx=960;
+    eL.setAttribute('x',-40); eL.setAttribute('width',cx-gg+40);
+    eR.setAttribute('x',cx+gg); eR.setAttribute('width',1000-gg);
+    if(gg>1.5){show(wound,true);
+      wP.setAttribute('d',`M${cx-gg},${top} L${cx-gg},${top+D*0.55} Q${cx-gg},${top+D} ${cx},${top+D} Q${cx+gg},${top+D} ${cx+gg},${top+D*0.55} L${cx+gg},${top} Z`);
+      const ig=gg*0.55, iD=D*0.8;
+      wInner.setAttribute('d',`M${cx-ig},${top+iD*0.35} Q${cx-ig},${top+iD} ${cx},${top+iD} Q${cx+ig},${top+iD} ${cx+ig},${top+iD*0.35} Z`);
+    } else show(wound,false);
+    place(cL,cx-gg-24,0); place(cR,cx+gg+24,0);
+    divs.forEach((o,i)=>{
+      const vis=lt>3.2&&lt<11.6; show(o.p,vis); if(!vis)return;
+      const s=(lt*0.7+o.ph)%1, sep=easeInOut(clamp(s*1.6))*24;
+      o.a.setAttribute('cx',-sep); o.b.setAttribute('cx',sep);
+      const edge=o.dx<0?cx-gg:cx+gg;
+      place(o.p,edge+o.dx,o.y,i*20,backOut(prog(lt,3.2+i*0.15,3.7+i*0.15)));
+    });
+    const dp=prog(lt,0.4,1.3), up=easeIn(prog(lt,3.6,4.6));
+    const ang=118, rad=ang*Math.PI/180;
+    updDevice(dev,1090-Math.cos(rad)*(-700*(1-easeOut(dp))+700*up)*-1,170-Math.sin(rad)*(700*(1-easeOut(dp))+700*up),ang,prog(lt,1.3,1.6)*(1-prog(lt,3.4,3.6)),f,0.95);
+    pop(t1,1490,290,lt,4.6,2);
+    pop(t2,1490,380,lt,9.2,-2);
+    sparks.forEach((s,i)=>{const p=prog(lt,11.1+i*0.12,11.9+i*0.12); show(s,p>0&&p<1);
+      if(p>0&&p<1){const a=-Math.PI/2+(i-1.5)*0.7; place(s,cx+Math.cos(a)*90*easeOut(p),top-10+Math.sin(a)*90*easeOut(p),p*120,backOut(clamp(p*2.5))*(1-p*0.5));}});
+  };
+}
+
+// ===== Szene 4: Pointe =====
+function scenePointe(g){
+  const aber=tag(g,'Aber:',{size:104,pad:46,fill:C.ink,color:C.white});
+  const cardL=piece(g); el('rect',{x:-300,y:-250,width:600,height:500,rx:18,fill:C.white},cardL);
+  const ttl=el('text',{y:-180,'text-anchor':'middle','font-size':46,fill:C.ink},cardL); ttl.textContent='Labor & Tierversuch';
+  const cardR=piece(g); el('rect',{x:-300,y:-250,width:600,height:500,rx:18,fill:C.white},cardR);
+  const ttr=el('text',{y:-180,'text-anchor':'middle','font-size':46,fill:C.ink},cardR); ttr.textContent='Mensch';
+  const petri=piece(g);
+  el('ellipse',{rx:125,ry:52,cy:14,fill:'#B9D9E3'},petri);
+  el('ellipse',{rx:125,ry:52,fill:'#E3F2F6',stroke:'#9CC7D3','stroke-width':6},petri);
+  [[-50,-8,14,'#8DB255'],[20,10,18,'#E9B44C'],[60,-14,10,'#8DB255'],[-10,-22,9,'#E9B44C'],[-70,14,8,'#E9B44C']].forEach(([x,y,r,c])=>el('ellipse',{cx:x,cy:y,rx:r,ry:r*0.45,fill:c},petri));
+  const mouse=piece(g);
+  const tail=el('path',{stroke:'#E8A3A8','stroke-width':8,fill:'none','stroke-linecap':'round'},mouse);
+  el('ellipse',{rx:84,ry:54,fill:'#A9A9B4'},mouse);
+  el('circle',{cx:-36,cy:46,r:13,fill:'#8F8F9A'},mouse); el('circle',{cx:40,cy:48,r:13,fill:'#8F8F9A'},mouse);
+  el('circle',{cx:74,cy:-22,r:42,fill:'#B4B4BF'},mouse);
+  el('circle',{cx:56,cy:-62,r:26,fill:'#B4B4BF'},mouse); el('circle',{cx:56,cy:-62,r:15,fill:'#F0B8BC'},mouse);
+  el('circle',{cx:88,cy:-30,r:6.5,fill:C.ink},mouse);
+  const nose=el('circle',{cx:116,cy:-14,r:9,fill:'#E77C86'},mouse);
+  const person=piece(g);
+  el('path',{d:'M-130,170 Q-130,40 0,30 Q130,40 130,170 Z',fill:C.teal},person);
+  el('rect',{x:-22,y:0,width:44,height:40,fill:'#E9B897'},person);
+  el('circle',{cy:-60,r:80,fill:C.skin1},person);
+  el('path',{d:'M-80,-70 Q-78,-150 0,-148 Q82,-150 80,-72 Q50,-112 -10,-108 Q-50,-106 -80,-70 Z',fill:'#6B4A35'},person);
+  const pf=makeFace(el('g',{transform:'translate(0,-48)'},person),58); setFace(pf,4,0.6);
+  const q=piece(g); el('circle',{r:78,fill:C.yellow},q);
+  const qt=el('text',{y:44,'text-anchor':'middle','font-size':130,fill:C.ink},q); qt.textContent='?';
+  const arr=piece(g);
+  el('path',{d:'M-170,0 L120,0',stroke:C.ink,'stroke-width':12,'stroke-dasharray':'30 22','stroke-linecap':'round',fill:'none'},arr);
+  el('path',{d:'M110,-34 L172,0 L110,34 Z',fill:C.ink},arr);
+  function stamp(text,col){const p=piece(g);
+    const t=el('text',{y:20,'text-anchor':'middle','font-size':60,fill:col,'letter-spacing':4},p); t.textContent=text;
+    const w=t.getComputedTextLength()+60;
+    el('rect',{x:-w/2,y:-46,width:w,height:92,rx:10,fill:'none',stroke:col,'stroke-width':8},p); return p;}
+  const sH=stamp('HINWEIS','#D9971A'), sB=stamp('BEWEIS?','#C8463D');
+  // Schlussbanner "Hinweis ≠ Beweis"
+  const ban=piece(g); const br=el('rect',{rx:16,fill:C.white},ban);
+  const a=el('text',{'font-size':76,fill:'#C88A12','text-anchor':'start',y:26},ban); a.textContent='Hinweis';
+  const b=el('text',{'font-size':76,fill:'#C8463D','text-anchor':'start',y:26},ban); b.textContent='Beweis';
+  const wa=a.getComputedTextLength(), wb=b.getComputedTextLength(), gap=130, W=wa+gap+wb+100;
+  a.setAttribute('x',-W/2+50); b.setAttribute('x',-W/2+50+wa+gap);
+  const nx=-W/2+50+wa+gap/2;
+  el('rect',{x:nx-34,y:-22,width:68,height:13,rx:6,fill:C.ink},ban);
+  el('rect',{x:nx-34,y:9,width:68,height:13,rx:6,fill:C.ink},ban);
+  el('rect',{x:nx-7,y:-44,width:14,height:88,rx:6,fill:C.ink,transform:`rotate(28 ${nx} 0)`},ban);
+  br.setAttribute('x',-W/2); br.setAttribute('y',-62); br.setAttribute('width',W); br.setAttribute('height',124);
+  return (lt,f)=>{
+    pop(aber,960,145,lt,0.3,-3);
+    slideIn(cardL,520,560,lt,1.3,-600,-3);
+    pop(petri,420,560,lt,1.8,-3);
+    pop(mouse,610,690,lt,2.2,-3,0.4);
+    nose.setAttribute('cy',-14+Math.sin(lt*14)*2.5);
+    const sw=Math.sin(lt*3)*18;
+    tail.setAttribute('d',`M-80,10 C-140,${20+sw} -150,${-50-sw} -200,${-30+sw}`);
+    const sp=prog(lt,4,4.25); show(sH,sp>0); if(sp>0){place(sH,520,815,-10,lerp(2.2,1,easeIn(sp))); sH.setAttribute('opacity',sp.toFixed(2));}
+    pop(arr,960,560,lt,5.3,0);
+    slideIn(cardR,1400,560,lt,5.6,2500,3);
+    pop(person,1400,640,lt,6.0,3,0.5);
+    pop(q,960,420,lt,6.6,Math.sin(lt*5)*8);
+    const sb=prog(lt,7.6,7.85); show(sB,sb>0); if(sb>0){place(sB,1400,815,8,lerp(2.2,1,easeIn(sb))); sB.setAttribute('opacity',sb.toFixed(2));}
+    const bp=prog(lt,9,9.6); show(ban,bp>0); if(bp>0) place(ban,960,lerp(1250,975,backOut(bp)),-1);
+  };
+}
+
+// ---------- Aufbau & Wiedergabe ----------
+function renderAt(t){
+  const f=Math.floor(t*STOP_FPS+1e-6); t=f/STOP_FPS;
+  JT=Math.floor(t*4);
+  scenes.forEach((sc,i)=>{
+    const last=i===scenes.length-1;
+    const vis=t>=sc.s&&(last||t<sc.e+0.8);
+    show(sc.g,vis); if(!vis) return;
+    const lt=t-sc.s;
+    if(i>0){const p=prog(lt,0,0.7); sc.g.setAttribute('transform',`translate(0,${lerp(1200,0,backOut(p)).toFixed(1)}) rotate(${lerp(4,0,p).toFixed(2)} 960 540)`);}
+    sc.upd(lt,f);
+  });
+}
+
+async function init(){
+  await document.fonts.load('600 40px Fredoka');
+  await document.fonts.ready;
+  makeScene('titel','#F4EAD5',sceneTitel);
+  makeScene('keime','#E3EFE6',sceneKeime);
+  makeScene('durchblutung','#F6E6D8',sceneDurchblutung);
+  makeScene('wunde','#EAE3F2',sceneWunde);
+  makeScene('pointe','#F4EAD5',scenePointe);
+  window.renderAt=renderAt; window.DURATION=DURATION; window.STOP_FPS=STOP_FPS;
+  const isRender=new URLSearchParams(location.search).has('render');
+  if(isRender){document.body.classList.add('render'); renderAt(0); window.READY=true; return;}
+  const scrub=document.getElementById('scrub'), tc=document.getElementById('tc'), btn=document.getElementById('play');
+  scrub.max=DURATION; let playing=true, t0=performance.now(), cur=0;
+  btn.onclick=()=>{playing=!playing; btn.textContent=playing?'Pause':'Play'; t0=performance.now()-cur*1000;};
+  scrub.oninput=()=>{cur=+scrub.value; t0=performance.now()-cur*1000; renderAt(cur); tc.textContent=cur.toFixed(1)+' s';};
+  (function loop(){ if(playing){cur=((performance.now()-t0)/1000)%DURATION; scrub.value=cur; tc.textContent=cur.toFixed(1)+' s'; renderAt(cur);} requestAnimationFrame(loop); })();
+  window.READY=true;
+}
+init();
+</script>
+</body>
+</html>
