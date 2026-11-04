@@ -41,6 +41,11 @@ Datei: `PumOrga-Praxis-0.9.13-Shopify.html.txt` (ersetzt den Shopify-Code von 0.
 3. **Fußzeile „Seite X von Y“ in den Arbeitsanweisungen:** keine doppelte Fußzeile, wenn „Wichtige Grundlagen“ und
    die erste AA auf demselben Blatt beginnen.
 4. Im Inhaltsverzeichnis steht der Bereichstitel aus dem Dokument (z. B. „Heilmittelverordnung und Abrechnung“).
+5. **Zusätzliche Entwurfstexte der Haupt-App (zu Punkt 7):**
+   - Praxisbeurteilung, Fußzeile „Arbeitsentwurf · Gefährdungsbeurteilung mit Betriebsarzt / Fachkraft für
+     Arbeitssicherheit abstimmen“ wird nach der Freigabe zu „In Kraft seit DATUM · freigegeben von NAME“.
+   - Datenschutz, oranger Kasten „Arbeitsentwurf. Datenschutztexte bitte vor Verwendung prüfen lassen …“
+     entfällt nach der Freigabe.
 
 ## Fehleranalyse
 
