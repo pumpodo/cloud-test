@@ -42,7 +42,10 @@ und **bestehende Freigaben bleiben gültig**. Bitte in der Haupt-App genauso vor
 - **Lösung:** Die Funktion `paginate(root)` misst vor dem Drucken das echte Druckbild:
   - Sie übernimmt alle `@media print`-Regeln vorübergehend als `<style>` und setzt den Container auf 180 mm Breite (A4 abzüglich 15 mm Rand je Seite).
   - „Einheiten“ beginnen bei jedem erzwungenen Seitenumbruch: `.print-doc`, `.chapter-page` (außer der ersten), `.aa` (außer `.first`, nicht innerhalb von `.flow`).
-  - Blätter je Einheit = `ceil(Höhe / 269mm − 0.03)`.
+  - Höhe einer Einheit = vom Beginn der Einheit bis zur Unterkante ihres **letzten innersten Elements** (nur Elemente ohne Kind-Elemente). Leerabstände am Ende zählen also nicht mit, weil sie im Druck am Seitenende wegfallen.
+  - Blätter je Einheit = `ceil(Höhe / 269mm − 0.001)`.
+  - Erste Fassung (gemessen bis zum Beginn der nächsten Einheit, Spielraum 3 %) war zu ungenau: In der Variante „nur Einwegprodukte“ lief ein Abschnitt um 0,25 % über, und ab dort war alles um 1 verschoben. Bei der Fehleranalyse behoben.
+  - `paginate()` steht in `try/catch`, damit der Druck auch bei einem Messfehler startet.
   - Danach werden `.pg-a` (erstes Blatt), `.pg-b` (letztes Blatt), `.pg-r` (Bereich „–X“), `.pg-n` (Gesamtzahl), `.pg-doc` (Blätter des Dokuments) und `[data-to]` (Verweise im Inhaltsverzeichnis) gefüllt.
 - Die Vorschau des Hygieneplans zeigt dieselben Zahlen (`previewPages()`).
 - Arbeitsanweisungen und Aushänge haben jetzt am Ende jeder Einheit eine Fußzeile „Seite X von Y“ (`.unit-foot`, nur im Druck sichtbar).
@@ -87,5 +90,15 @@ Gilt für jedes Dokument einzeln, je nach eigenem Freigabestatus. Werden Angaben
 ## 10. Hinweis zur Internetadresse im Ausdruck (keine Code-Änderung)
 - Die https-Zeile unten im Ausdruck stammt vom Browser und nicht von der App. Abschalten lässt sie sich im Druckfenster unter „Kopf- und Fußzeilen“.
 
-## 11. Version
+## 11. Fehleranalyse (Abschluss)
+- Getestet mit 5 Praxis-Varianten (leer; Hessen Mehrweg + Sterilisator + alle Leistungen; Bayern nur Einweg; NRW Einweg + Mehrweg; Sachsen Mehrweg ohne Sterilisator mit langem Praxisnamen), jeweils **ohne und mit Freigabe**, also 10 Gesamtausdrucke mit 78 bis 80 Blättern:
+  - jede Seitenzahl entspricht dem tatsächlichen Blatt, jeder AA-Eintrag im Inhaltsverzeichnis zeigt aufs richtige Blatt,
+  - Prüfsummen identisch mit 0.9.12, bestehende Freigaben bleiben also gültig,
+  - keine JavaScript-Fehler, keine alten Bereichs- oder AA-Nummern, keine Verweise auf fehlende Anweisungen, AA-Nummern lückenlos,
+  - nach der Freigabe keine Entwurfstexte mehr; übrig bleiben nur die gewollten Linien (geprüft, Vertretung, D-Arzt-Datum).
+- Zusätzlich behoben (Fehler schon in 0.9.12): Der orange Kasten verwies auf die Seite „Klärung mit dem Gesundheitsamt“, die es nur gibt, wenn ein Bundesland gewählt ist. Ohne Bundesland entfällt der Verweis jetzt.
+- Vollbild: mit echter Fullscreen-API und mit Ersatz-Overlay getestet.
+- Nicht getestet: Safari, iPad und iPhone sowie das echte Shopify-Theme. Bitte beim ersten Ausdruck stichprobenartig ein paar Seitenzahlen kontrollieren.
+
+## 12. Version
 - `APP_VERSION` 0.9.12 → 0.9.13; die Kommentarzeile im Shopify-Code ist angepasst.
